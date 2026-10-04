@@ -1,6 +1,6 @@
 {
   "name": "tanstack-markdown-mermaid",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "Mermaid extension for @tanstack/markdown with lazy, accessible, gracefully-degrading React rendering",
   "license": "MIT",
   "author": "Bertrand GRESSIER",
