@@ -11,6 +11,6 @@ interface MermaidInitializer {
     }) => void;
 }
 export declare function ensureMermaidInitialized(mermaid: MermaidInitializer, theme: 'light' | 'dark'): void;
-/** Test-only: reset the per-theme memo between tests. */
+/** Test-only: reset the applied-theme memo between tests. */
 export declare function __resetInitializedThemesForTests(): void;
 export {};
