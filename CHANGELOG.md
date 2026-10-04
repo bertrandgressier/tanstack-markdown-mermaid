@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1](https://github.com/bertrandgressier/tanstack-markdown-mermaid/compare/v0.2.0...v0.2.1) (2026-10-04)
+
+
+### Bug Fixes
+
+* support @tanstack/markdown 1.x and mermaid theme re-init ([#1](https://github.com/bertrandgressier/tanstack-markdown-mermaid/issues/1)) ([7d68662](https://github.com/bertrandgressier/tanstack-markdown-mermaid/commit/7d6866237163fd983259daa08877ad6c9b69dac9))
+
 ## [0.2.0] - 2026-09-24
 ### Added
 - `onError` prop: called when diagram rendering fails (falls back to `console.error`).
