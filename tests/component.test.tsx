@@ -539,6 +539,48 @@ describe('MermaidDiagram — theme', () => {
     )
   })
 
+  it('theme auto re-initializes when flipping back light → dark → light', async () => {
+    const listeners: Array<(event: MediaQueryListEvent) => void> = []
+    const mql = {
+      matches: false,
+      addEventListener: (_t: string, cb: (event: MediaQueryListEvent) => void) => {
+        listeners.push(cb)
+      },
+      removeEventListener: vi.fn(),
+    }
+    vi.stubGlobal('matchMedia', vi.fn(() => mql))
+
+    mermaidRender.mockResolvedValue({ svg: SVG })
+    const { container } = diagram({ theme: 'auto' })
+    await waitFor(() => expect(container.querySelector('.mermaid-svg')).not.toBeNull())
+
+    const flip = async (matches: boolean) => {
+      vi.useFakeTimers()
+      try {
+        await act(async () => {
+          listeners.forEach((cb) => cb({ matches } as MediaQueryListEvent))
+        })
+        await advanceDebounce()
+      } finally {
+        vi.useRealTimers()
+      }
+    }
+    await flip(true)
+    await waitFor(() =>
+      expect(mermaidInitialize).toHaveBeenLastCalledWith(expect.objectContaining({ theme: 'dark' })),
+    )
+    await flip(false)
+    await waitFor(() =>
+      expect(mermaidInitialize).toHaveBeenLastCalledWith(
+        expect.objectContaining({ theme: 'default' }),
+      ),
+    )
+    expect(mermaidInitialize).toHaveBeenCalledTimes(3)
+    expect(container.querySelector('.mermaid-diagram')?.getAttribute('data-mermaid-theme')).toBe(
+      'light',
+    )
+  })
+
   it('theme auto renders dark-first when the system initially prefers dark', async () => {
     const mql = {
       matches: true,
@@ -558,7 +600,7 @@ describe('MermaidDiagram — theme', () => {
     )
   })
 
-  it('initializes mermaid once per theme, not on every render', async () => {
+  it('initializes mermaid once while the theme is unchanged, not on every render', async () => {
     mermaidRender.mockResolvedValueOnce({ svg: SVG }).mockResolvedValueOnce({ svg: SVG_ALT })
     const { container, rerender } = diagram()
     await waitFor(() => expect(container.querySelector('.mermaid-svg')).not.toBeNull())
