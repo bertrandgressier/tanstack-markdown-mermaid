@@ -23,8 +23,9 @@ export declare function extractMermaidTitle(source: string): string | undefined;
  * source inside a `<pre class="mermaid-source">`.
  *
  * An unclosed fence is consumed up to the end of the document (streaming
- * compatibility): the partial content becomes a mermaid source and the
- * component degrades gracefully for as long as it is invalid.
+ * compatibility): the partial content becomes a mermaid source flagged
+ * with `properties.complete = 'false'`, so the component shows the source
+ * quietly (no error state) for as long as it is invalid.
  */
 export declare function mermaidExtension(opts?: MermaidOptions): MarkdownExtension;
 export type { MermaidOptions, MermaidTheme };

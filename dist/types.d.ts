@@ -32,4 +32,11 @@ export interface MermaidOptions {
      * rendered. Default `'Diagram not displayed — source preserved'`.
      */
     fallbackMessage?: string;
+    /**
+     * Extra mermaid configuration passed to `mermaid.initialize`, merged OVER
+     * the defaults (`{ startOnLoad: false, securityLevel: 'strict', theme }`).
+     * Must be JSON-serializable: it travels in the node's `properties` as a
+     * JSON string. `securityLevel` stays `'strict'` unless overridden here.
+     */
+    mermaidConfig?: Record<string, unknown>;
 }

@@ -63,12 +63,13 @@ function isMermaidComponentNode(node) {
  * source inside a `<pre class="mermaid-source">`.
  *
  * An unclosed fence is consumed up to the end of the document (streaming
- * compatibility): the partial content becomes a mermaid source and the
- * component degrades gracefully for as long as it is invalid.
+ * compatibility): the partial content becomes a mermaid source flagged
+ * with `properties.complete = 'false'`, so the component shows the source
+ * quietly (no error state) for as long as it is invalid.
  */
 export function mermaidExtension(opts) {
     const tagName = opts?.tagName ?? DEFAULT_MERMAID_TAG_NAME;
-    const emit = (source) => {
+    const emit = (source, complete) => {
         const properties = { source };
         if (opts?.theme !== undefined)
             properties.theme = opts.theme;
@@ -77,6 +78,13 @@ export function mermaidExtension(opts) {
         if (opts?.fallbackMessage !== undefined) {
             properties.fallbackMessage = opts.fallbackMessage;
         }
+        if (opts?.mermaidConfig !== undefined) {
+            properties.mermaidConfig = JSON.stringify(opts.mermaidConfig);
+        }
+        // Only unclosed (streaming partial) fences are flagged; closed fences
+        // carry no `complete` property.
+        if (!complete)
+            properties.complete = 'false';
         return {
             type: 'component',
             name: MERMAID_COMPONENT_NAME,
@@ -102,10 +110,12 @@ export function mermaidExtension(opts) {
             const closeRe = new RegExp(`^ {0,3}${fenceChar}{${fence.length},}[ \t]*$`);
             let i = context.index + 1;
             const content = [];
+            let closed = false;
             while (i < context.lines.length) {
                 const l = context.lines[i] ?? '';
                 if (closeRe.test(l)) {
                     i++;
+                    closed = true;
                     break;
                 }
                 content.push(stripUpTo(l, indent));
@@ -113,7 +123,7 @@ export function mermaidExtension(opts) {
             }
             // Unclosed fence: consumed up to the end (streaming).
             context.consume(i - context.index);
-            return emit(content.join('\n'));
+            return emit(content.join('\n'), closed);
         },
         renderHtml(node) {
             if (!isMermaidComponentNode(node))

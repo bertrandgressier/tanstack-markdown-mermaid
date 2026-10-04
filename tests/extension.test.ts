@@ -121,6 +121,24 @@ describe('mermaidExtension — parsing', () => {
     expect(nodes[0].properties?.source).toBe(SIMPLE)
   })
 
+  it('flags an unclosed fence with complete="false", not a closed one', () => {
+    const open = findMermaidNodes(
+      parseMarkdown(`\`\`\`mermaid\n${SIMPLE}`, { extensions: [mermaidExtension()] }),
+    )
+    expect(open[0].properties?.complete).toBe('false')
+    const closed = findMermaidNodes(
+      parseMarkdown(`\`\`\`mermaid\n${SIMPLE}\n\`\`\``, { extensions: [mermaidExtension()] }),
+    )
+    expect(closed[0].properties?.complete).not.toBe('false')
+  })
+
+  it('serializes mermaidConfig into the properties', () => {
+    const doc = parseMarkdown('```mermaid\nfoo\n```', {
+      extensions: [mermaidExtension({ mermaidConfig: { fontFamily: 'X' } })],
+    })
+    expect(findMermaidNodes(doc)[0].properties?.mermaidConfig).toBe('{"fontFamily":"X"}')
+  })
+
   it('propagates tagName, theme, lazy and fallbackMessage into the properties', () => {
     const doc = parseMarkdown('```mermaid\nfoo\n```', {
       extensions: [
