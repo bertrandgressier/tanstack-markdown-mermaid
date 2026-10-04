@@ -1,4 +1,4 @@
-import { createElement, memo, useEffect, useId, useRef, useState } from 'react'
+import { createElement, memo, useEffect, useId, useMemo, useRef, useState } from 'react'
 
 import { extractMermaidTitle } from './index.js'
 import { ensureMermaidInitialized } from './mermaid-init.js'
@@ -65,6 +65,41 @@ export interface MermaidDiagramProps {
    * Degradation behavior is identical either way.
    */
   onError?: (error: unknown) => void
+  /**
+   * `false` / `'false'` marks the source as an unclosed (still streaming)
+   * fence: while it cannot be rendered, the raw source is shown quietly —
+   * no error state, no `onError`. Default `true`.
+   */
+  complete?: boolean | string
+  /**
+   * Extra config for `mermaid.initialize`, merged over the defaults. Either
+   * an object or its JSON string (as carried by the node properties).
+   */
+  mermaidConfig?: Record<string, unknown> | string
+}
+
+const SR_ONLY_STYLE = {
+  position: 'absolute',
+  width: '1px',
+  height: '1px',
+  padding: 0,
+  margin: '-1px',
+  overflow: 'hidden',
+  clip: 'rect(0, 0, 0, 0)',
+  whiteSpace: 'nowrap',
+  border: 0,
+} as const
+
+function parseConfig(
+  config: Record<string, unknown> | string | undefined,
+): Record<string, unknown> | undefined {
+  if (typeof config !== 'string') return config
+  try {
+    const parsed: unknown = JSON.parse(config)
+    return parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : undefined
+  } catch {
+    return undefined
+  }
 }
 
 type Status =
@@ -156,9 +191,15 @@ export const MermaidDiagram = memo(function MermaidDiagram({
   minHeight,
   srOnlySource = true,
   onError,
+  complete,
+  mermaidConfig,
 }: MermaidDiagramProps) {
   const code = source ?? ''
   const wantsLazy = coerceLazy(lazy)
+  const isComplete = complete !== false && complete !== 'false'
+  const configKey =
+    typeof mermaidConfig === 'string' ? mermaidConfig : JSON.stringify(mermaidConfig ?? null)
+  const parsedConfig = useMemo(() => parseConfig(mermaidConfig), [configKey])
   const isAuto = theme === 'auto'
   const prefersDark = usePrefersDark(isAuto)
   const resolvedTheme: 'light' | 'dark' = isAuto
@@ -183,6 +224,10 @@ export const MermaidDiagram = memo(function MermaidDiagram({
 
   const rawId = useId()
   const mermaidId = `mmd-${rawId.replace(/[^a-zA-Z0-9_-]/g, '')}`
+  // Each mermaid.render call gets its own id (`${mermaidId}-${n}`), so
+  // cleanup of a failed/superseded attempt never touches another attempt's
+  // nodes.
+  const attemptRef = useRef(0)
 
   // On-demand rendering: IntersectionObserver on the root container.
   useEffect(() => {
@@ -212,6 +257,7 @@ export const MermaidDiagram = memo(function MermaidDiagram({
     let cancelled = false
 
     const startRender = () => {
+      const attemptId = `${mermaidId}-${++attemptRef.current}`
       // Stale-while-revalidate: keep displaying the last good SVG while
       // re-rendering (e.g. after a source/theme change); only fall back to
       // the pending placeholder when no SVG has been rendered yet — no blank
@@ -222,20 +268,27 @@ export const MermaidDiagram = memo(function MermaidDiagram({
         .then(async (module) => {
           if (cancelled) return
           const mermaid = module.default
-          // Memoized per theme: no repeated global config resets (see
+          // Memoized per theme/config: no repeated global config resets (see
           // mermaid-init.ts).
-          ensureMermaidInitialized(mermaid, resolvedTheme)
-          const { svg } = await mermaid.render(mermaidId, code)
+          ensureMermaidInitialized(mermaid, resolvedTheme, parsedConfig)
+          const { svg } = await mermaid.render(attemptId, code)
           if (cancelled) return
           setStatus({ state: 'ok', svg })
         })
         .catch((error: unknown) => {
           // mermaid may leave an orphan error node in the DOM. The node id is
-          // tied to this specific render attempt, so clean it up even when
-          // the render has been superseded (cancelled).
+          // tied to this specific render attempt (`attemptId`), so clean it
+          // up even when the render has been superseded (cancelled).
           if (typeof document !== 'undefined') {
-            document.getElementById(`d${mermaidId}`)?.remove()
-            document.getElementById(mermaidId)?.remove()
+            document.getElementById(`d${attemptId}`)?.remove()
+            document.getElementById(attemptId)?.remove()
+          }
+          // Unclosed fence (streaming partial): failure is expected — stay
+          // quiet, no error state and no onError.
+          if (!isComplete) {
+            if (cancelled) return
+            setStatus((previous) => (previous.state === 'ok' ? previous : { state: 'pending' }))
+            return
           }
           if (onErrorRef.current) {
             onErrorRef.current(error)
@@ -262,7 +315,7 @@ export const MermaidDiagram = memo(function MermaidDiagram({
       clearTimeout(timer)
       cancelled = true
     }
-  }, [visible, code, resolvedTheme, mermaidId])
+  }, [visible, code, resolvedTheme, mermaidId, isComplete, parsedConfig])
 
   const ariaLabel = title ?? extractMermaidTitle(code) ?? DEFAULT_ARIA_LABEL
   const rootClass = ['mermaid-diagram', className].filter(Boolean).join(' ')
@@ -282,7 +335,11 @@ export const MermaidDiagram = memo(function MermaidDiagram({
     // Source technically present in every state (sr-only), unless the page
     // exposes it elsewhere and opted out via `srOnlySource: false`.
     srOnlySource
-      ? createElement('span', { className: 'mermaid-sr-only' }, createElement('code', null, code))
+      ? createElement(
+          'span',
+          { className: 'mermaid-sr-only', style: SR_ONLY_STYLE },
+          createElement('code', null, code),
+        )
       : null,
     status.state === 'ok'
       ? createElement('div', {
@@ -301,7 +358,9 @@ export const MermaidDiagram = memo(function MermaidDiagram({
             ),
             createElement('pre', { key: 'source', className: 'mermaid-fallback-source' }, code),
           ]
-        : null,
+        : !isComplete
+          ? createElement('pre', { className: 'mermaid-pending-source' }, code)
+          : null,
   )
 })
 

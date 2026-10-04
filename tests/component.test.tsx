@@ -622,3 +622,124 @@ describe('MermaidDiagram — theme', () => {
     expect(mermaidInitialize).toHaveBeenCalledTimes(1)
   })
 })
+
+describe('MermaidDiagram — streaming partial (complete=false)', () => {
+  it('invalid unclosed source: no onError, no error UI, source shown quietly', async () => {
+    mermaidRender.mockRejectedValue(new Error('Parse error'))
+    const onError = vi.fn()
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const { container } = diagram({ complete: 'false', onError })
+    await waitFor(() => expect(mermaidRender).toHaveBeenCalled())
+    await act(async () => {})
+    expect(onError).not.toHaveBeenCalled()
+    expect(errorSpy).not.toHaveBeenCalled()
+    expect(container.querySelector('.mermaid-fallback-message')).toBeNull()
+    expect(container.querySelector('[role="status"]')).toBeNull()
+    expect(container.querySelector('.mermaid-pending-source')?.textContent).toBe(SIMPLE)
+    errorSpy.mockRestore()
+  })
+
+  it('complete diagram + invalid source keeps the error path', async () => {
+    mermaidRender.mockRejectedValue(new Error('Parse error'))
+    const onError = vi.fn()
+    const { container } = diagram({ onError })
+    await waitFor(() =>
+      expect(container.querySelector('.mermaid-fallback-message')).not.toBeNull(),
+    )
+    expect(onError).toHaveBeenCalledTimes(1)
+    expect(container.querySelector('.mermaid-pending-source')).toBeNull()
+  })
+
+  it('renders the svg when an unclosed source happens to be valid', async () => {
+    mermaidRender.mockResolvedValue({ svg: SVG })
+    const { container } = diagram({ complete: false })
+    await waitFor(() => expect(container.querySelector('.mermaid-svg')).not.toBeNull())
+    expect(container.querySelector('.mermaid-pending-source')).toBeNull()
+  })
+})
+
+describe('MermaidDiagram — mermaidConfig', () => {
+  it('merges the config over the defaults (object and JSON string)', async () => {
+    mermaidRender.mockResolvedValue({ svg: SVG })
+    const cfg = { fontFamily: 'Fira', themeVariables: { primaryColor: '#f00' } }
+    const { container } = diagram({ mermaidConfig: JSON.stringify(cfg) })
+    await waitFor(() => expect(container.querySelector('.mermaid-svg')).not.toBeNull())
+    expect(mermaidInitialize).toHaveBeenCalledWith({
+      startOnLoad: false,
+      securityLevel: 'strict',
+      theme: 'default',
+      ...cfg,
+    })
+  })
+
+  it('accepts an object and respects an explicit securityLevel override', async () => {
+    mermaidRender.mockResolvedValue({ svg: SVG })
+    const { container } = diagram({ mermaidConfig: { securityLevel: 'loose' } })
+    await waitFor(() => expect(container.querySelector('.mermaid-svg')).not.toBeNull())
+    expect(mermaidInitialize).toHaveBeenCalledWith(
+      expect.objectContaining({ securityLevel: 'loose' }),
+    )
+  })
+
+  it('keeps securityLevel strict when no config is given', async () => {
+    mermaidRender.mockResolvedValue({ svg: SVG })
+    const { container } = diagram()
+    await waitFor(() => expect(container.querySelector('.mermaid-svg')).not.toBeNull())
+    expect(mermaidInitialize).toHaveBeenCalledWith(
+      expect.objectContaining({ securityLevel: 'strict' }),
+    )
+  })
+})
+
+describe('MermaidDiagram — sr-only inline styles', () => {
+  it('applies visually-hidden declarations inline (no consumer CSS)', async () => {
+    mermaidRender.mockResolvedValue({ svg: SVG })
+    const { container } = diagram()
+    await waitFor(() => expect(container.querySelector('.mermaid-svg')).not.toBeNull())
+    const el = container.querySelector<HTMLElement>('.mermaid-sr-only')!
+    expect(el.style.position).toBe('absolute')
+    expect(el.style.width).toBe('1px')
+    expect(el.style.height).toBe('1px')
+    expect(el.style.overflow).toBe('hidden')
+    expect(el.style.whiteSpace).toBe('nowrap')
+  })
+})
+
+describe('MermaidDiagram — per-attempt render ids', () => {
+  it('uses a distinct id per mermaid.render call and cleans only that attempt', async () => {
+    const ids: string[] = []
+    mermaidRender.mockImplementation((id: string) => {
+      ids.push(id)
+      const orphan = document.createElement('div')
+      orphan.id = `d${id}`
+      document.body.appendChild(orphan)
+      return Promise.reject(new Error('boom'))
+    })
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const { container, rerender } = diagram()
+    await waitFor(() =>
+      expect(container.querySelector('.mermaid-fallback-message')).not.toBeNull(),
+    )
+    // A foreign node whose id collides with the bare per-mount id must survive.
+    const base = ids[0].replace(/-\d+$/, '')
+    const bystander = document.createElement('div')
+    bystander.id = `d${base}-keep`
+    document.body.appendChild(bystander)
+
+    vi.useFakeTimers()
+    try {
+      rerender(createElement(MermaidDiagram, { source: 'graph TD; A-->C', lazy: false }))
+      await advanceDebounce()
+    } finally {
+      vi.useRealTimers()
+    }
+    await waitFor(() => expect(ids).toHaveLength(2))
+    expect(ids[0]).not.toBe(ids[1])
+    expect(ids[0]).toMatch(/-1$/)
+    expect(ids[1]).toMatch(/-2$/)
+    await waitFor(() => expect(document.getElementById(`d${ids[1]}`)).toBeNull())
+    expect(document.getElementById(`d${base}-keep`)).not.toBeNull()
+    bystander.remove()
+    errorSpy.mockRestore()
+  })
+})

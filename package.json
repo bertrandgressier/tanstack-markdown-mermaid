@@ -36,11 +36,9 @@
     "typecheck": "pnpm exec tsc --noEmit",
     "prepublishOnly": "pnpm run build"
   },
-  "dependencies": {
-    "mermaid": "^12.0.0"
-  },
   "peerDependencies": {
     "@tanstack/markdown": ">=0.0.13 <2.0.0",
+    "mermaid": "^12.0.0",
     "react": ">=18"
   },
   "peerDependenciesMeta": {
@@ -54,6 +52,7 @@
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "jsdom": "^26.1.0",
+    "mermaid": "^12.0.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "typescript": "^7.0.2",

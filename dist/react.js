@@ -1,4 +1,4 @@
-import { createElement, memo, useEffect, useId, useRef, useState } from 'react';
+import { createElement, memo, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { extractMermaidTitle } from './index.js';
 import { ensureMermaidInitialized } from './mermaid-init.js';
 export const DEFAULT_MERMAID_FALLBACK_MESSAGE = 'Diagram not displayed — source preserved';
@@ -9,6 +9,28 @@ const DEFAULT_ARIA_LABEL = 'Mermaid diagram';
  * a single mermaid render. The first render of a mount stays immediate.
  */
 const RE_RENDER_DEBOUNCE_MS = 150;
+const SR_ONLY_STYLE = {
+    position: 'absolute',
+    width: '1px',
+    height: '1px',
+    padding: 0,
+    margin: '-1px',
+    overflow: 'hidden',
+    clip: 'rect(0, 0, 0, 0)',
+    whiteSpace: 'nowrap',
+    border: 0,
+};
+function parseConfig(config) {
+    if (typeof config !== 'string')
+        return config;
+    try {
+        const parsed = JSON.parse(config);
+        return parsed && typeof parsed === 'object' ? parsed : undefined;
+    }
+    catch {
+        return undefined;
+    }
+}
 function coerceTheme(theme) {
     return theme === 'dark' ? 'dark' : 'light';
 }
@@ -81,9 +103,12 @@ function usePrefersDark(enabled) {
  * </Markdown>
  * ```
  */
-export const MermaidDiagram = memo(function MermaidDiagram({ source, title, theme, lazy, fallbackMessage = DEFAULT_MERMAID_FALLBACK_MESSAGE, className, minHeight, srOnlySource = true, onError, }) {
+export const MermaidDiagram = memo(function MermaidDiagram({ source, title, theme, lazy, fallbackMessage = DEFAULT_MERMAID_FALLBACK_MESSAGE, className, minHeight, srOnlySource = true, onError, complete, mermaidConfig, }) {
     const code = source ?? '';
     const wantsLazy = coerceLazy(lazy);
+    const isComplete = complete !== false && complete !== 'false';
+    const configKey = typeof mermaidConfig === 'string' ? mermaidConfig : JSON.stringify(mermaidConfig ?? null);
+    const parsedConfig = useMemo(() => parseConfig(mermaidConfig), [configKey]);
     const isAuto = theme === 'auto';
     const prefersDark = usePrefersDark(isAuto);
     const resolvedTheme = isAuto
@@ -105,6 +130,10 @@ export const MermaidDiagram = memo(function MermaidDiagram({ source, title, them
     });
     const rawId = useId();
     const mermaidId = `mmd-${rawId.replace(/[^a-zA-Z0-9_-]/g, '')}`;
+    // Each mermaid.render call gets its own id (`${mermaidId}-${n}`), so
+    // cleanup of a failed/superseded attempt never touches another attempt's
+    // nodes.
+    const attemptRef = useRef(0);
     // On-demand rendering: IntersectionObserver on the root container.
     useEffect(() => {
         if (!wantsLazy || visible)
@@ -131,6 +160,7 @@ export const MermaidDiagram = memo(function MermaidDiagram({ source, title, them
             return;
         let cancelled = false;
         const startRender = () => {
+            const attemptId = `${mermaidId}-${++attemptRef.current}`;
             // Stale-while-revalidate: keep displaying the last good SVG while
             // re-rendering (e.g. after a source/theme change); only fall back to
             // the pending placeholder when no SVG has been rendered yet — no blank
@@ -141,21 +171,29 @@ export const MermaidDiagram = memo(function MermaidDiagram({ source, title, them
                 if (cancelled)
                     return;
                 const mermaid = module.default;
-                // Memoized per theme: no repeated global config resets (see
+                // Memoized per theme/config: no repeated global config resets (see
                 // mermaid-init.ts).
-                ensureMermaidInitialized(mermaid, resolvedTheme);
-                const { svg } = await mermaid.render(mermaidId, code);
+                ensureMermaidInitialized(mermaid, resolvedTheme, parsedConfig);
+                const { svg } = await mermaid.render(attemptId, code);
                 if (cancelled)
                     return;
                 setStatus({ state: 'ok', svg });
             })
                 .catch((error) => {
                 // mermaid may leave an orphan error node in the DOM. The node id is
-                // tied to this specific render attempt, so clean it up even when
-                // the render has been superseded (cancelled).
+                // tied to this specific render attempt (`attemptId`), so clean it
+                // up even when the render has been superseded (cancelled).
                 if (typeof document !== 'undefined') {
-                    document.getElementById(`d${mermaidId}`)?.remove();
-                    document.getElementById(mermaidId)?.remove();
+                    document.getElementById(`d${attemptId}`)?.remove();
+                    document.getElementById(attemptId)?.remove();
+                }
+                // Unclosed fence (streaming partial): failure is expected — stay
+                // quiet, no error state and no onError.
+                if (!isComplete) {
+                    if (cancelled)
+                        return;
+                    setStatus((previous) => (previous.state === 'ok' ? previous : { state: 'pending' }));
+                    return;
                 }
                 if (onErrorRef.current) {
                     onErrorRef.current(error);
@@ -183,7 +221,7 @@ export const MermaidDiagram = memo(function MermaidDiagram({ source, title, them
             clearTimeout(timer);
             cancelled = true;
         };
-    }, [visible, code, resolvedTheme, mermaidId]);
+    }, [visible, code, resolvedTheme, mermaidId, isComplete, parsedConfig]);
     const ariaLabel = title ?? extractMermaidTitle(code) ?? DEFAULT_ARIA_LABEL;
     const rootClass = ['mermaid-diagram', className].filter(Boolean).join(' ');
     return createElement('div', {
@@ -198,7 +236,7 @@ export const MermaidDiagram = memo(function MermaidDiagram({ source, title, them
     // Source technically present in every state (sr-only), unless the page
     // exposes it elsewhere and opted out via `srOnlySource: false`.
     srOnlySource
-        ? createElement('span', { className: 'mermaid-sr-only' }, createElement('code', null, code))
+        ? createElement('span', { className: 'mermaid-sr-only', style: SR_ONLY_STYLE }, createElement('code', null, code))
         : null, status.state === 'ok'
         ? createElement('div', {
             className: 'mermaid-svg',
@@ -213,5 +251,7 @@ export const MermaidDiagram = memo(function MermaidDiagram({ source, title, them
                 { key: 'message', className: 'mermaid-fallback-message', role: 'status' }, fallbackMessage),
                 createElement('pre', { key: 'source', className: 'mermaid-fallback-source' }, code),
             ]
-            : null);
+            : !isComplete
+                ? createElement('pre', { className: 'mermaid-pending-source' }, code)
+                : null);
 });

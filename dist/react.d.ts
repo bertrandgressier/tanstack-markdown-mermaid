@@ -51,6 +51,17 @@ export interface MermaidDiagramProps {
      * Degradation behavior is identical either way.
      */
     onError?: (error: unknown) => void;
+    /**
+     * `false` / `'false'` marks the source as an unclosed (still streaming)
+     * fence: while it cannot be rendered, the raw source is shown quietly —
+     * no error state, no `onError`. Default `true`.
+     */
+    complete?: boolean | string;
+    /**
+     * Extra config for `mermaid.initialize`, merged over the defaults. Either
+     * an object or its JSON string (as carried by the node properties).
+     */
+    mermaidConfig?: Record<string, unknown> | string;
 }
 /**
  * Mermaid rendering component for `mermaidExtension()`.
@@ -87,7 +98,7 @@ export interface MermaidDiagramProps {
  * </Markdown>
  * ```
  */
-export declare const MermaidDiagram: import("react").MemoExoticComponent<({ source, title, theme, lazy, fallbackMessage, className, minHeight, srOnlySource, onError, }: MermaidDiagramProps) => import("react").DetailedReactHTMLElement<{
+export declare const MermaidDiagram: import("react").MemoExoticComponent<({ source, title, theme, lazy, fallbackMessage, className, minHeight, srOnlySource, onError, complete, mermaidConfig, }: MermaidDiagramProps) => import("react").DetailedReactHTMLElement<{
     className: string;
     ref: import("react").RefObject<HTMLDivElement | null>;
     'data-mermaid-theme': "dark" | "light";
