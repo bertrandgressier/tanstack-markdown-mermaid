@@ -3,6 +3,9 @@ name: Publish
 on:
   release:
     types: [published]
+  # Manual fallback: releases created by release-please via GITHUB_TOKEN do not
+  # trigger the release event (GitHub anti-recursion). Run this manually if needed.
+  workflow_dispatch:
 
 permissions:
   contents: read
