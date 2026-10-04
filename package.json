@@ -40,7 +40,7 @@
     "mermaid": "^12.0.0"
   },
   "peerDependencies": {
-    "@tanstack/markdown": ">=0.0.13 <0.1.0",
+    "@tanstack/markdown": ">=0.0.13 <2.0.0",
     "react": ">=18"
   },
   "peerDependenciesMeta": {
@@ -49,7 +49,7 @@
     }
   },
   "devDependencies": {
-    "@tanstack/markdown": "0.0.15",
+    "@tanstack/markdown": "1.0.0",
     "@testing-library/react": "^16.3.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",

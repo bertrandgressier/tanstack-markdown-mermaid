@@ -25,6 +25,25 @@ jobs:
       - name: Ensure committed dist is in sync
         run: git diff --exit-code dist
 
+  peer-matrix:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # supported @tanstack/markdown versions (peer range >=0.0.13 <2.0.0)
+        markdown: ['0.0.15', '0.0.16', '1.0.0']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --no-frozen-lockfile
+      - run: pnpm add -D @tanstack/markdown@${{ matrix.markdown }}
+      - run: pnpm typecheck
+      - run: pnpm test
+
   demo:
     runs-on: ubuntu-latest
     defaults:
